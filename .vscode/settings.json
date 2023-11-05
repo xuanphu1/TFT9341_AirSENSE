@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "lv_test_assert.h": "c",
+        "lv_test_obj.h": "c",
+        "lv_test_core.h": "c",
+        "lv_test_style.h": "c",
+        "lvgl.h": "c",
+        "tft.h": "c",
+        "lv_draw_line.h": "c",
+        "lvgl_helpers.h": "c",
+        "cstdlib": "c",
+        "bitset": "c",
+        "datamanager.h": "c"
+    }
+}
