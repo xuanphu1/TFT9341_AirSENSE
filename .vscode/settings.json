@@ -10,6 +10,7 @@
         "lvgl_helpers.h": "c",
         "cstdlib": "c",
         "bitset": "c",
-        "datamanager.h": "c"
+        "datamanager.h": "c",
+        "task.h": "c"
     }
 }

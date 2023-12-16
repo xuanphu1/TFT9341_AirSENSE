@@ -15,25 +15,64 @@ esp_err_t tft_initialize(){
     ESP_LOGI(__func__, "Initialize LVGL library");
     lv_init();
 
-    // Initialize driver
-    ESP_LOGI(__func__, "Initialize driver for ILI9341");
+    /* Initialize SPI or I2C bus used by the drivers */
     lvgl_driver_init();
 
-    static lv_disp_buf_t draw_buf_dsc_1;
-    static lv_color_t draw_buf_1[DISP_BUF_SIZE];                          /*A buffer*/
-    lv_disp_buf_init(&draw_buf_dsc_1, draw_buf_1, NULL,DISP_BUF_SIZE);   /*Initialize the display buffer*/
+    lv_color_t* buf1 = heap_caps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    assert(buf1 != NULL);
 
-    lv_disp_drv_t disp_drv;                         /*Descriptor of a display driver*/
-    lv_disp_drv_init(&disp_drv);                    /*Basic initialization*/
+    /* Use double buffered when not working with monochrome displays */
+#ifndef CONFIG_LV_TFT_DISPLAY_MONOCHROME
+    lv_color_t* buf2 = heap_caps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    assert(buf2 != NULL);
+#else
+    static lv_color_t *buf2 = NULL;
+#endif
 
-    /*Used to copy the buffer's content to the display*/
+    static lv_disp_buf_t disp_buf;
+
+    uint32_t size_in_px = DISP_BUF_SIZE;
+
+#if defined CONFIG_LV_TFT_DISPLAY_CONTROLLER_IL3820         \
+    || defined CONFIG_LV_TFT_DISPLAY_CONTROLLER_JD79653A    \
+    || defined CONFIG_LV_TFT_DISPLAY_CONTROLLER_UC8151D     \
+    || defined CONFIG_LV_TFT_DISPLAY_CONTROLLER_SSD1306
+
+    /* Actual size in pixels, not bytes. */
+    size_in_px *= 8;
+#endif
+
+    /* Initialize the working buffer depending on the selected display.
+     * NOTE: buf2 == NULL when using monochrome displays. */
+    lv_disp_buf_init(&disp_buf, buf1, buf2, size_in_px);
+
+    lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
     disp_drv.flush_cb = disp_driver_flush;
 
-    /*Set a display buffer*/
-    disp_drv.buffer = &draw_buf_dsc_1;
+#if defined CONFIG_DISPLAY_ORIENTATION_PORTRAIT || defined CONFIG_DISPLAY_ORIENTATION_PORTRAIT_INVERTED
+    disp_drv.rotated = 1;
+#endif
 
-    /*Finally register the driver*/
+    /* When using a monochrome display we need to register the callbacks:
+     * - rounder_cb
+     * - set_px_cb */
+#ifdef CONFIG_LV_TFT_DISPLAY_MONOCHROME
+    disp_drv.rounder_cb = disp_driver_rounder;
+    disp_drv.set_px_cb = disp_driver_set_px;
+#endif
+
+    disp_drv.buffer = &disp_buf;
     lv_disp_drv_register(&disp_drv);
+
+    /* Register an input device when enabled on the menuconfig */
+#if CONFIG_LV_TOUCH_CONTROLLER != TOUCH_CONTROLLER_NONE
+    lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.read_cb = touch_driver_read;
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    lv_indev_drv_register(&indev_drv);
+#endif
 
     /* Create and start a periodic timer interrupt to call lv_tick_inc */
     const esp_timer_create_args_t periodic_timer_args = {
@@ -45,208 +84,8 @@ esp_err_t tft_initialize(){
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, LV_TICK_PERIOD_MS * 1000));
 
     /*Change the active screen's background color*/
-    lv_obj_set_style_local_bg_color(lv_scr_act(), LV_BTN_PART_MAIN, 0, LV_COLOR_WHITE);
+    lv_obj_set_style_local_bg_color(lv_scr_act(), LV_BTN_PART_MAIN, 0, LV_COLOR_BLACK);
 
     ESP_LOGI(__func__, "TFT initialize successfully.");
     return ESP_OK;
 }
-
-
-
-
-void tft_initScreen(){
-    /***********Creat styles***********/
-    static lv_style_t labelStyle;
-    lv_style_init(&labelStyle);
-    //bo góc
-    lv_style_set_radius(&labelStyle, LV_STATE_DEFAULT, 5);
-    //viền
-    lv_style_set_outline_width(&labelStyle, LV_STATE_DEFAULT, 1);
-    lv_style_set_outline_color(&labelStyle, LV_STATE_DEFAULT, LV_COLOR_WHITE);
-
-    //set độ xuyên (opacity) của style
-    lv_style_set_bg_opa(&labelStyle, LV_STATE_DEFAULT, LV_OPA_0);
-    //set background của style
-    //lv_labelStyle_set_bg_color(&labelStyle, LV_STATE_DEFAULT, LV_COLOR_CYAN);
-
-    //set khoảng cách của text với các cạnh của box style
-    //lv_labelStyle_set_pad_hor(&labelStyle, LV_STATE_DEFAULT, 40);
-    lv_style_set_pad_ver(&labelStyle, LV_STATE_DEFAULT, 5);
-    lv_style_set_pad_left(&labelStyle, LV_STATE_DEFAULT,5);
-    lv_style_set_pad_right(&labelStyle, LV_STATE_DEFAULT,5);
-
-    //set màu chữ của style
-    lv_style_set_text_color(&labelStyle, LV_STATE_DEFAULT, LV_COLOR_CYAN);
-    
-    //set decor gạch chân, gạch ngang,...
-    //lv_labelStyle_set_text_decor(&labelStyle, LV_STATE_DEFAULT, LV_TEXT_DECOR_UNDERLINE);
-
-    //set phông chữ
-    lv_style_set_text_font(&labelStyle, LV_STATE_DEFAULT, &lv_font_montserrat_16);
-
-    //Value style
-    static lv_style_t valueStyle;
-    lv_style_init(&valueStyle);
-    lv_style_set_bg_opa(&valueStyle, LV_STATE_DEFAULT, LV_OPA_0);
-    lv_style_set_pad_ver(&valueStyle, LV_STATE_DEFAULT, 5);
-    lv_style_set_pad_left(&valueStyle, LV_STATE_DEFAULT,60);
-    lv_style_set_text_color(&valueStyle, LV_STATE_DEFAULT, lv_color_hex(0x17ff00));
-    lv_style_set_text_font(&valueStyle, LV_STATE_DEFAULT, &lv_font_montserrat_16);
-    
-    //Top screen style
-    static lv_style_t topScreenStyle;
-    lv_style_init(&topScreenStyle);
-    // lv_style_set_radius(&topScreenStyle, LV_STATE_DEFAULT, 5);
-    // lv_style_set_bg_opa(&topScreenStyle, LV_STATE_DEFAULT, LV_OPA_COVER);
-    // lv_style_set_bg_color(&topScreenStyle, LV_STATE_DEFAULT, LV_COLOR_SILVER);
-    // lv_style_set_shadow_width(&topScreenStyle, LV_STATE_DEFAULT, 80);
-    // lv_style_set_shadow_color(&topScreenStyle, LV_STATE_DEFAULT, lv_color_hex(0xfa9b37));
-    // lv_style_set_shadow_opa(&topScreenStyle, LV_STATE_DEFAULT, LV_OPA_COVER);
-    // lv_style_set_pad_ver(&topScreenStyle, LV_STATE_DEFAULT, 5);
-    // lv_style_set_pad_right(&topScreenStyle, LV_STATE_DEFAULT,220);
-    // lv_style_set_pad_left(&topScreenStyle, LV_STATE_DEFAULT,5);
-    // lv_style_set_text_color(&topScreenStyle, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-    
-    lv_style_set_radius(&topScreenStyle, LV_STATE_DEFAULT, 10);
-
-    lv_style_set_bg_opa(&topScreenStyle, LV_STATE_DEFAULT, LV_OPA_COVER);
-    lv_style_set_bg_color(&topScreenStyle, LV_STATE_DEFAULT, LV_COLOR_SILVER);
-    lv_style_set_pad_hor(&topScreenStyle, LV_STATE_DEFAULT, 10);
-    lv_style_set_pad_ver(&topScreenStyle, LV_STATE_DEFAULT, 10);
-    lv_style_set_text_color(&topScreenStyle, LV_STATE_DEFAULT, LV_COLOR_WHITE);
-
-
-    /***********Creat labels to display***********/
-    //Date Time
-    // label_to_display.dateTime = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.dateTime, "00/00/0000     00:00");
-    // lv_obj_add_style(label_to_display.dateTime, LV_STATE_DEFAULT,&topScreenStyle);
-    // lv_obj_set_pos(label_to_display.dateTime, 0, 0);
-    
-    //Location
-    label_to_display.location = lv_label_create(lv_scr_act(),NULL);
-    //lv_label_set_long_mode(label_to_display.groupName, LV_LABEL_LONG_SROLL_CIRC);     /*Circular scroll*/
-    //lv_obj_set_width(label_to_display.groupName, 100);
-    lv_label_set_text(label_to_display.location, LV_SYMBOL_HOME "NGHE AN");
-    lv_obj_add_style(label_to_display.location,LV_STATE_DEFAULT,&topScreenStyle);
-    // lv_obj_set_style_local_text_color(label_to_display.location, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_WHITE);
-    //lv_obj_set_style_local_pad_ver(label_to_display.groupName, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, 5);
-    lv_obj_set_pos(label_to_display.location, 200, 0);
-
-    // label_to_display.date1 = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.date1,"day1 ")
-
-        
-    // //Temperature
-    // label_to_display.temp_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.temp_label, "Temp:                    oC");
-    // lv_obj_add_style(label_to_display.temp_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.temp_label,0,40); 
-
-    // label_to_display.temp_val = lv_label_create(label_to_display.temp_label, NULL);
-    // lv_obj_add_style(label_to_display.temp_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.temp_val, "00.00");
-
-    // //Humidity
-    // label_to_display.humi_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.humi_label, "Humi:                %RH");
-    // lv_obj_add_style(label_to_display.humi_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.humi_label,0,90); 
-
-    // label_to_display.humi_val = lv_label_create(label_to_display.humi_label, NULL);
-    // lv_obj_add_style(label_to_display.humi_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.humi_val, "00.00");
-    
-    // //Pressure
-    // label_to_display.press_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.press_label, "Press:                  kPa");
-    // lv_obj_add_style(label_to_display.press_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.press_label,0,140); 
-
-    // label_to_display.press_val = lv_label_create(label_to_display.press_label, NULL);
-    // lv_obj_add_style(label_to_display.press_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.press_val, "000.00");
-    
-    // //PM10
-    // label_to_display.pm10_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.pm10_label, "PM10:          ug/m3");
-    // lv_obj_add_style(label_to_display.pm10_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.pm10_label,170,40); 
-
-    // label_to_display.pm10_val = lv_label_create(label_to_display.pm10_label, NULL);
-    // lv_obj_add_style(label_to_display.pm10_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.pm10_val, "00");
-
-    // //PM2.5
-    // label_to_display.pm2_5_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.pm2_5_label, "PM2.5:         ug/m3");
-    // lv_obj_add_style(label_to_display.pm2_5_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.pm2_5_label,170,90); 
-
-    // label_to_display.pm2_5_val = lv_label_create(label_to_display.pm2_5_label, NULL);
-    // lv_obj_add_style(label_to_display.pm2_5_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.pm2_5_val, "00");
-
-    // //PM1
-    // label_to_display.pm1_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.pm1_label, "PM1.0:         ug/m3");
-    // lv_obj_add_style(label_to_display.pm1_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.pm1_label,170,140); 
-
-    // label_to_display.pm1_val = lv_label_create(label_to_display.pm1_label, NULL);
-    // lv_obj_add_style(label_to_display.pm1_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.pm1_val, "00");
-
-    // //CO2
-    // label_to_display.co2_label = lv_label_create(lv_scr_act(), NULL);
-    // lv_label_set_text(label_to_display.co2_label, "CO2:              ppm");
-    // lv_obj_add_style(label_to_display.co2_label, LV_OBJ_PART_MAIN, &labelStyle);
-    // lv_obj_set_pos(label_to_display.co2_label,95,190); 
-
-    // label_to_display.co2_val = lv_label_create(label_to_display.co2_label, NULL);
-    // lv_obj_add_style(label_to_display.co2_val, LV_OBJ_PART_MAIN, &valueStyle);
-    // lv_label_set_text(label_to_display.co2_val, "00");
-
-    // ESP_LOGI(__func__, "TFT initialize screen done!");
-}
-
-
-
-// void test(){
-    
-//     float temp = 10.32;
-//     sprintf(dataConvertedToString, "%.2f", temp);
-//     lv_label_set_text(label_to_display.temp_val, dataConvertedToString);
-// }
-
-// esp_err_t tft_updateScreen(struct dataSensor_st *data_sensor, const char*timestring){
-//     lv_label_set_text(label_to_display.dateTime, timestring);
-
-//     data_sensor->temperature = 10.13;
-//     char dataConvertedToString[6];
-//     memset(dataConvertedToString, 0, 6);
-    
-
-//     sprintf(dataConvertedToString, "%.2f", data_sensor->temperature);
-//     lv_label_set_text(label_to_display.temp_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%.2f", data_sensor->humidity);
-//     lv_label_set_text(label_to_display.humi_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%.2f", ((data_sensor->pressure)/1000));
-//     lv_label_set_text(label_to_display.press_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%d", data_sensor->pm10);
-//     lv_label_set_text(label_to_display.pm10_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%d", data_sensor->pm2_5);
-//     lv_label_set_text(label_to_display.pm2_5_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%d", data_sensor->pm1_0);
-//     lv_label_set_text(label_to_display.pm1_val, dataConvertedToString);
-
-//     sprintf(dataConvertedToString, "%d", data_sensor->co2);
-//     lv_label_set_text(label_to_display.co2_val, dataConvertedToString);
-
-//     return ESP_OK;
-// }

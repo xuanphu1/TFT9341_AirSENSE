@@ -1,4 +1,4 @@
-/* * Data converted from C:/Espressif/frameworks/esp/TEST_TFT_DISPLAY_IDF-main/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from C:/Espressif/frameworks/esp/TFT9341_AirSENSE/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 .section .rodata.embedded

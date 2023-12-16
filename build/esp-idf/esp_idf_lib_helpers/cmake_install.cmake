@@ -1,8 +1,8 @@
-# Install script for directory: C:/Espressif/frameworks/esp/TEST_TFT_DISPLAY_IDF-main/component/esp_idf_lib_helpers
+# Install script for directory: C:/Espressif/frameworks/esp/TFT9341_AirSENSE/component/esp_idf_lib_helpers
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/main")
+  set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/TEST_TFT_DISPLAY_IDF-main")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 

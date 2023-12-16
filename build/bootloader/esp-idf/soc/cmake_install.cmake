@@ -39,7 +39,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("C:/Espressif/frameworks/esp/TEST_TFT_DISPLAY_IDF-main/build/bootloader/esp-idf/soc/esp32/cmake_install.cmake")
+  include("C:/Espressif/frameworks/esp/TFT9341_AirSENSE/build/bootloader/esp-idf/soc/esp32/cmake_install.cmake")
 
 endif()
 
